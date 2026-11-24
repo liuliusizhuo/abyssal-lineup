@@ -62,13 +62,13 @@ function containsAbilityTag(effect, t) {
  *
  * effect 文本匹配模式（不看 condition），支持突破前/突破后合并判断：
  *
- * - 突破前命中 && 突破后命中 → 取突破后数据，btLabel = ""
+ * - 突破前命中 && 突破后命中 → 取突破后数据，btLabel = "突破后"
  * - 只有突破后命中 → 取突破后数据，btLabel = "突破后"
  * - 只有突破前命中 → 取突破前数据，btLabel = "突破前"
  * - 都不命中 → 跳过
  *
  * 返回：{ attack: [...], shield_break: [...], functional: [...] }
- * 每项：{ companion, skill, matchedTags: string[], btLabel: string }
+ * matchBefore、matchAfter 分别记录该阶段匹配到的作用；未匹配的阶段为 null。
  */
 
 // 内部：对单个武将做命中检测，返回 { type, matchedTags } 或 null
@@ -150,23 +150,19 @@ export function filterCompanions(generalName, breakthrough) {
     const beforeResult = before ? checkMatch(before, factionTags, abilityTags, opSummon) : null
     const afterResult  = after  ? checkMatch(after,  factionTags, abilityTags, opSummon) : null
 
-    let chosen = null   // { companion, skill, matchedTags, btLabel }
-
-    if (beforeResult && afterResult) {
-      // 两者都命中 → 取突破后，标注"突破后"
-      chosen = { companion: after, skill: after.inherentSkill, matchedTags: afterResult.matchedTags, btLabel: '突破后', type: afterResult.type }
-    } else if (afterResult) {
-      // 只有突破后命中
-      chosen = { companion: after, skill: after.inherentSkill, matchedTags: afterResult.matchedTags, btLabel: '突破后', type: afterResult.type }
-    } else if (beforeResult) {
-      // 只有突破前命中
-      chosen = { companion: before, skill: before.inherentSkill, matchedTags: beforeResult.matchedTags, btLabel: '突破前', type: beforeResult.type }
-    }
-
-    if (!chosen) continue
-
-    const { type, ...item } = chosen
-    result[type].push(item)
+    const match = afterResult || beforeResult
+    if (!match) continue
+    const companion = afterResult ? after : before
+    result[match.type].push({
+      companion,
+      skill: companion.inherentSkill,
+      matchedTags: match.matchedTags,
+      btLabel: companion.breakthrough,
+      matchBefore: beforeResult?.type ?? null,
+      matchAfter: afterResult?.type ?? null,
+      beforeEffect: beforeResult ? before.inherentSkill.effect : null,
+      afterEffect: afterResult ? after.inherentSkill.effect : null,
+    })
   }
 
   return result

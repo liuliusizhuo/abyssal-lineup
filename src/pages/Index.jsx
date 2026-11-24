@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
 import CompanionLookup from "../components/CompanionLookup";
 import TravelPartners from "../components/TravelPartners";
 import { recommendTravelPartners } from "../utils/travelPartners";
@@ -230,11 +230,20 @@ const GeneralInfoCard = ({ general }) => {
 };
 
 // 随行武将卡片（effect 文本匹配版：显示命中标签和固有战法效果）
-const CompanionCard = ({ companion, skill, matchedTags, btLabel }) => {
-  const [expanded, setExpanded] = useState(false);
+const CompanionCard = ({ item, expanded, onToggle }) => {
+  const { companion, skill, matchedTags, btLabel, beforeEffect, afterEffect, matchBefore, matchAfter } = item;
+  const sameEffect = beforeEffect === afterEffect && matchBefore === matchAfter;
+  const stages = sameEffect
+    ? [["突破前后", beforeEffect, matchBefore]]
+    : [["突破前", beforeEffect, matchBefore], ["突破后", afterEffect, matchAfter]];
 
   return (
     <div
+      id={`companion-${companion.name}`}
+      role="group"
+      aria-label={`${companion.name}的随行效果`}
+      tabIndex={-1}
+      className="scroll-mt-3 focus:outline focus:outline-2 focus:outline-[#f1c40f]"
       style={{
         background: COLORS.card,
         border: `1px solid ${COLORS.border}`,
@@ -247,7 +256,7 @@ const CompanionCard = ({ companion, skill, matchedTags, btLabel }) => {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span style={{ fontSize: 15, fontWeight: 700, color: COLORS.text, flex: 1 }}>
           {companion.name}
-          {btLabel && (
+          {!expanded && btLabel && (
             <span
               style={{
                 marginLeft: 6,
@@ -266,7 +275,8 @@ const CompanionCard = ({ companion, skill, matchedTags, btLabel }) => {
           )}
         </span>
         <button
-          onClick={() => setExpanded(v => !v)}
+          onClick={onToggle}
+          aria-expanded={expanded}
           style={{
             background: "none",
             border: `1px solid ${COLORS.border}`,
@@ -291,7 +301,6 @@ const CompanionCard = ({ companion, skill, matchedTags, btLabel }) => {
         </div>
       )}
 
-      {/* 固有战法效果文本（始终显示） */}
       {skill.effect && (
         <div
           style={{
@@ -304,18 +313,12 @@ const CompanionCard = ({ companion, skill, matchedTags, btLabel }) => {
             padding: "8px 10px",
           }}
         >
-          {skill.effect}
-        </div>
-      )}
-
-      {/* 展开详情 */}
-      {expanded && (
-        <div style={{ marginTop: 10, borderTop: `1px solid ${COLORS.border}`, paddingTop: 10 }}>
-          {skill.text && (
-            <div style={{ fontSize: 12, color: COLORS.subtext, lineHeight: 1.6, marginBottom: 6 }}>
-              {skill.text}
+          {expanded ? stages.filter(([, effect]) => effect).map(([label, effect, type]) => (
+            <div key={label} className="mt-2 first:mt-0">
+              <div style={{ fontSize: 11, color: COLORS.subtext }}>{label} · {ROLE_CONFIG[type].label}</div>
+              {effect}
             </div>
-          )}
+          )) : skill.effect}
         </div>
       )}
     </div>
@@ -323,8 +326,7 @@ const CompanionCard = ({ companion, skill, matchedTags, btLabel }) => {
 };
 
 // 分组面板
-const GroupPanel = ({ type, items, defaultOpen }) => {
-  const [open, setOpen] = useState(defaultOpen);
+const GroupPanel = ({ type, items, open, onToggle, expandedCards, onToggleCard }) => {
   const cfg = ROLE_CONFIG[type];
 
   return (
@@ -339,7 +341,8 @@ const GroupPanel = ({ type, items, defaultOpen }) => {
     >
       {/* 面板头部 */}
       <button
-        onClick={() => setOpen(v => !v)}
+        onClick={onToggle}
+        aria-expanded={open}
         style={{
           width: "100%",
           background: cfg.bg,
@@ -378,13 +381,12 @@ const GroupPanel = ({ type, items, defaultOpen }) => {
               暂无符合条件的随行武将
             </div>
           ) : (
-            items.map(({ companion, skill, matchedTags, btLabel }, i) => (
+            items.map(item => (
               <CompanionCard
-                key={`${companion.name}-${i}`}
-                companion={companion}
-                skill={skill}
-                matchedTags={matchedTags}
-                btLabel={btLabel}
+                key={item.companion.name}
+                item={item}
+                expanded={Boolean(expandedCards[item.companion.name])}
+                onToggle={() => onToggleCard(item.companion.name)}
               />
             ))
           )}
@@ -401,6 +403,25 @@ const Index = () => {
   const [selectedName, setSelectedName] = useState("");
   const [breakthrough, setBreakthrough] = useState("突破前");
   const dropdownRef = useRef(null);
+  const [openGroups, setOpenGroups] = useState({ shield_break: true });
+  const [expandedCards, setExpandedCards] = useState({});
+  const pendingCard = useRef(null);
+
+  const showCompanion = (type, name) => {
+    pendingCard.current = name;
+    setOpenGroups(current => ({ ...current, [type]: true }));
+    setExpandedCards(current => ({ ...current, [name]: true }));
+  };
+
+  useLayoutEffect(() => {
+    if (!pendingCard.current) return;
+    const card = document.getElementById(`companion-${pendingCard.current}`);
+    pendingCard.current = null;
+    if (card) {
+      card.focus({ preventScroll: true });
+      card.scrollIntoView({ block: "start" });
+    }
+  }, [openGroups, expandedCards]);
 
   // 数据异步加载状态：loading -> ready / error
   const [dataState, setDataState] = useState("loading");
@@ -420,8 +441,9 @@ const Index = () => {
   const allNames = useMemo(() => getUniqueGeneralNames(generalsData), [dataState]);
 
   const filteredNames = useMemo(() => {
-    if (!searchText.trim()) return allNames;
-    return allNames.filter(n => n.includes(searchText.trim()));
+    const term = searchText.trim().normalize("NFKC");
+    if (!term) return allNames;
+    return allNames.filter(name => name.normalize("NFKC").includes(term));
   }, [allNames, searchText]);
 
   // 当前选中武将数据
@@ -463,6 +485,10 @@ const Index = () => {
   }, []);
 
   const handleSelectName = (name) => {
+    if (name !== selectedName) {
+      setOpenGroups({ shield_break: true });
+      setExpandedCards({});
+    }
     setSelectedName(name);
     setSearchText(name);
     setDropdownOpen(false);
@@ -700,7 +726,8 @@ const Index = () => {
         </div>
 
         {selectedGeneral && groups && (
-          <CompanionLookup key={selectedName} selectedName={selectedName} groups={groups} allNames={allNames} />
+          <CompanionLookup key={selectedName} selectedName={selectedName} groups={groups} allNames={allNames}
+            onShowCompanion={showCompanion} />
         )}
 
         {selectedGeneral && travelByStage && (
@@ -757,12 +784,15 @@ const Index = () => {
             ) : (
               <>
                 {/* 按 破盾 → 攻击 → 功能 顺序展示 */}
-                {(['shield_break', 'attack', 'functional']).map((type, i) => (
+                {(['shield_break', 'attack', 'functional']).map(type => (
                   <GroupPanel
                     key={type}
                     type={type}
                     items={groups[type]}
-                    defaultOpen={i === 0}
+                    open={Boolean(openGroups[type])}
+                    onToggle={() => setOpenGroups(current => ({ ...current, [type]: !current[type] }))}
+                    expandedCards={expandedCards}
+                    onToggleCard={name => setExpandedCards(current => ({ ...current, [name]: !current[name] }))}
                   />
                 ))}
               </>

@@ -1,17 +1,45 @@
 import { useId, useMemo, useState } from "react";
 
+const roleLabels = { shield_break: "破盾", attack: "攻击", functional: "辅助" };
+
 function searchName(name) {
   return name.normalize("NFKC").replace(/\s+/g, "").toLowerCase();
 }
 
-export default function CompanionLookup({ selectedName, groups, allNames }) {
+function MatchedResult({ name, match, onShowCompanion }) {
+  const { type, matchBefore, matchAfter } = match;
+  let breakthrough = "";
+  if (!matchBefore) breakthrough = "仅突破后";
+  else if (!matchAfter) breakthrough = "仅突破前";
+  const role = matchBefore && matchAfter && matchBefore !== matchAfter
+    ? `突破前${roleLabels[matchBefore]}／突破后${roleLabels[matchAfter]}`
+    : roleLabels[type];
+
+  return (
+    <>
+      <span className="flex flex-wrap items-baseline gap-x-2">
+        <button type="button" className="min-h-8 text-left font-bold underline decoration-[#8b949e] underline-offset-4 hover:text-[#f1c40f] focus-visible:outline-[#f1c40f]"
+          onClick={() => onShowCompanion(type, name)}>{name}</button>
+        {breakthrough && <span className="text-xs text-[#a6afb9]" title="随行武将的突破要求">{breakthrough}</span>}
+      </span>
+      <span className="text-[#78dba5]">{role} · 可用随行</span>
+    </>
+  );
+}
+
+export default function CompanionLookup({ selectedName, groups, allNames, onShowCompanion }) {
   const inputId = useId();
   const [query, setQuery] = useState("");
   const term = searchName(query);
-  const companions = useMemo(
-    () => new Set(Object.values(groups).flat().map(({ companion }) => companion.name)),
-    [groups],
-  );
+  const companions = useMemo(() => {
+    const matches = new Map();
+    for (const [type, members] of Object.entries(groups)) {
+      for (const { companion, matchBefore, matchAfter } of members) {
+        matches.set(companion.name, { type, matchBefore, matchAfter });
+      }
+    }
+    return matches;
+  }, [groups]);
   const results = term
     ? allNames.filter(name => name !== selectedName && searchName(name).includes(term))
     : [];
@@ -34,13 +62,12 @@ export default function CompanionLookup({ selectedName, groups, allNames }) {
           {results.length > 0 && (
             <ul className="space-y-2">
               {results.map(name => {
-                const available = companions.has(name);
+                const match = companions.get(name);
                 return (
-                  <li key={name} className="flex items-baseline justify-between gap-3 rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm leading-6">
-                    <strong>{name}</strong>
-                    <span className={available ? "text-[#78dba5]" : "text-[#a6afb9]"}>
-                      {available ? "可用随行" : "未列入可用随行"}
-                    </span>
+                  <li key={name} className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 rounded-md border border-[#30363d] bg-[#0d1117] px-3 py-2 text-sm leading-6">
+                    {match
+                      ? <MatchedResult name={name} match={match} onShowCompanion={onShowCompanion} />
+                      : <><strong>{name}</strong><span className="text-[#a6afb9]">未列入可用随行</span></>}
                   </li>
                 );
               })}
