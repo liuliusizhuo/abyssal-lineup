@@ -1,4 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
+import CompanionLookup from "../components/CompanionLookup";
+import TravelPartners from "../components/TravelPartners";
+import { recommendTravelPartners } from "../utils/travelPartners";
 
 // ===== 数据按需加载（不打入首屏 JS 包，加快国内首次打开）=====
 // recommend.js 与 weaponTraits.json 体积大，改为异步动态 import：
@@ -435,6 +438,14 @@ const Index = () => {
 
   const totalCount = groups ? groups.attack.length + groups.shield_break.length + groups.functional.length : 0;
 
+  const travelByStage = useMemo(() => {
+    if (!selectedGeneral) return null;
+    const weapon = weaponTraits[`${selectedGeneral.name}|${selectedGeneral.breakthrough}`];
+    return Object.fromEntries(["突破前", "突破后"].map(stage => [
+      stage, recommendTravelPartners(selectedGeneral, stage, generalsData, weapon),
+    ]));
+  }, [selectedGeneral, generalsData]);
+
   // 阵容推荐
   const lineupAfter  = useMemo(() => selectedName ? buildLineup(selectedName, breakthrough, true)  : null, [selectedName, breakthrough, dataState]);
   const lineupBefore = useMemo(() => selectedName ? buildLineup(selectedName, breakthrough, false) : null, [selectedName, breakthrough, dataState]);
@@ -687,6 +698,14 @@ const Index = () => {
             </div>
           )}
         </div>
+
+        {selectedGeneral && groups && (
+          <CompanionLookup key={selectedName} selectedName={selectedName} groups={groups} allNames={allNames} />
+        )}
+
+        {selectedGeneral && travelByStage && (
+          <TravelPartners mainGeneral={selectedGeneral} byStage={travelByStage} />
+        )}
 
         {/* ===== 区域2：推荐结果（分组展示） ===== */}
         {groups && (
